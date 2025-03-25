@@ -1,0 +1,129 @@
+this is an outline of the basic Iteration for the CSV parser for the mongoDB serverbase developed by Brody Nelson @ PAALABS @ MIZZOU 
+
+- This project is going to have an objective of creating a multithreaded server that will read from a CSV and input the data points into our mongoDB server. 
+- Be dynamic in acceptible data formating as the server will be used by mutliple teams and communication might not be the best suite
+- work 24/7 in congruence with Medfords server for the IOT devices
+
+Version 0.0.0.1
+
+This is the first version of the Documentation. 
+Project Overview: This is a project for a research lab at mizzou called PAAL. So far I have been exclusivley working on full stack for the webpage and data visulization portion 
+of this project. My main reason for getting hired on was to become a database developer to house all of the different data entry points from the AI model after it processes Iot devices
+data. It's also good to know that the AI model is hosted on server written in C++. But getting back on track here,  the problem is after the AI model process that data the output is a 
+CSV file of structured data. Which is fine, but a file holding data is useless in terms of being able to use the data outside of inputting the data into excel or something. So thats why I 
+creating this server here. I want the workflow of the server to be like this. 
+
+motivation: Okay, so I got excited for this project when I learned that we would be utilizing threads for the writing and operations of working with the database with this server.
+Also this is also for future implemenation for this system into the overall system when we are ready for that step in production. My colleague, Medford, wrote a server for the 
+IoT devices that the Ai Model will be hosted on when it comes time for production on a linux server that this server will also be running. So, I figured that I might as well write this server 
+in C++ so this could be a complemelty (one server) implemenation for when that times comes to be. 
+
+{image of work flow}
+
+Okay, so this right here is me brain dumping so I have a better idea for what my plans are for this server. But below this is the work flow that I want to work with 
+1. Ai ouputs CSV
+2. Server is always on listening to the folder AI is assigned output 
+	a. have a naming convention, or someway to identify formating of csv so we know what class to assign read obj 
+	b. have error handeling for pigs not created yet, 
+		I. on event that pig doesn't exist, give that thread the task of creating a new pig with default values 
+3. the server then parses through the csv 
+	a. this is the logic for how the threading in the program will work, which will be in the section below 
+4. after the database is written into, the thread is killed 
+
+OOP ( THREADING ) ALGORITHM
+
+Okay, threading can get confusing. Definitly when you will be hosting this server along side another server written by someone else on the same VPS whalso trying to take on the task
+of multithreading. But im going to go into this with the assumsion that neither one of our systems are going to be so inevitably poorly written that it will interfiere with the other. 
+
+So this is going to be the outline of my code structure and braindumping how I actually want to design this server. I don't have a lot of experience with C++ but I was risen on C so I don't 
+this that the transistion will be entirely difficult, but this project could be more of a taking than what I am wanting to lead on. So keep in mind, that the psuedo code that I want to through down 
+will be more geared towards an approach for C, but Ill find a way to make it work for C++// (that wont cause any errors right!! :()___)
+
+1. I will create a Thread Pool, anywhere from 4-8 threads 
+	a. each thread will be responsible for parsing through one csv, 
+2. So I will assigining a directory watcher to always be listening to a folder 
+3. when a new csv is detected, I will have a gaurdstatment to figure out what format the csv is for, if valid at all 
+	a. if the file is invalid, I will store the file in a rejected bin where the admin can go through and see rejected statements 
+	but this is when things get fun!!: 
+	
+>Threading ()
+- okay so to make life a little bit easier, we will be creating one thread per file and entry task 
+- but there are two different cases for when a thread is in operation, when it is (1) writing and when it is (2) creating 
+- Case(1) 
+	1. when the thread parses the document at gets to a pig that doesn't exist yet, we need to create new pig (but block operation from reading) 
+	2. assign pig obj with known values, and create pig document in database
+- case(2) just writing 
+	1. each line will have a time stamp and value for pig_id, assign pig_id to posture value @ timestamp and write to database
+	2. ensure that there are mutex lock and unlock for when other threads may try and to write into the database 
+	
+	
+>OOP\
+	...this project is coded in an Approach for Object orientated programming and thus the system will assign different classes for different concepts
+	for this first iteration, we are only really focusing on pig posuture. SO I will be making a class for a pig and in the pig class, I will be also creating a posture class. 
+- . I will have multiple classes for taking on objects of specific inserts, (all of the posutre data will be together, all of the BCS data will be together) 
+- . Because of this, we will be assigning different task to different arms of the system for creations after threads
+1. after thread is created, (which is assigning thread to file) we will parse through each line creating: 
+	a. a pig object 
+	b. a posture value at a specific time stamp assigned to pig obj 
+2. after updating obj with respected timeseries data, we will write to the database, we will continue to do this until every line is inserted. 
+
+
+
+File Concept Layout: 
+/sr/
+|-- main.cpp
+|-- Threadpool.h/ .cpp
+|-- CSVIngestTask.h / .cpp
+|--FileWatcher.h/.cpp
+|---|
+|	|-- Pig.h/.cpp
+|	|-- PostureData.h/.cpp
+
+
+
+CLASS STRUCUTRES: 
+
+struct CurrentLocation {
+    std::string farmId;
+    std::string barnId;
+    std::string stallId;
+
+    CurrentLocation(const std::string& farm = "N/A",
+                    const std::string& barn = "N/A",
+                    const std::string& stall = "N/A")
+        : farmId(farm), barnId(barn), stallId(stall) {}
+};
+
+class Pig {
+public:
+    int pigId;
+    std::string tag;
+    std::string breed;
+    int age;
+    CurrentLocation currentLocation;
+
+    // Full constructor
+    Pig(int pig_id,
+        const std::string& tag,
+        const std::string& breed,
+        int age,
+        const CurrentLocation& location)
+        : pigId(pig_id), tag(tag), breed(breed), age(age), currentLocation(location) {}
+
+    // Quick constructor with defaults
+    Pig(int pig_id)
+        : pigId(pig_id), tag("TAG-" + std::to_string(pig_id)),
+          breed("N/A"), age(0), currentLocation() {}
+
+    // BSON conversion
+    bsoncxx::document::value to_bson() const;
+};
+
+
+class Posuture () {
+	std::int pigId; 
+	std::chrono::system_clock::time_point timestamp; 
+	std::int score; 
+	
+	bsoncxx::document::value to_bson() const;
+}
