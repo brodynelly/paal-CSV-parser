@@ -10,3 +10,13 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
+
+./buid
+
+*.o
+
+*/buid
+*./build
+./build/
+/build
+
