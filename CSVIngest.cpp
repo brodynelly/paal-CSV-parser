@@ -50,8 +50,8 @@ void parse_and_batch_insert(const std::string& filepath,
     std::vector<int> pig_ids;
     std::string cell;
 
-    std::getline(header_ss, cell, ','); // Skip "Timestamp"
-    while (std::getline(header_ss, cell, ',')) {
+    std::getline(header_ss, cell, '\t'); // Skip "Timestamp"
+    while (std::getline(header_ss, cell, '\t')) {
         if (cell.rfind("ID_", 0) == 0) {
             try {
                 int id = std::stoi(cell.substr(3));
@@ -71,22 +71,42 @@ void parse_and_batch_insert(const std::string& filepath,
     while (std::getline(file, line)) {
         std::stringstream ss(line);
         std::string timestamp_str;
-        std::getline(ss, timestamp_str, ',');
+        std::getline(ss, timestamp_str, '\t');
 
         std::tm tm = {};
-        std::istringstream ts_stream(timestamp_str);
-        ts_stream >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
 
-        if (ts_stream.fail()) {
-            std::cerr << "❌ Timestamp parse fail: " << timestamp_str << std::endl;
-            continue;
+        // Parse timestamp in format YYYY_MM_DD_HH_MM_SS (e.g., 2022_08_22_02_20_00)
+        if (timestamp_str.length() == 19 &&
+            timestamp_str[4] == '_' && timestamp_str[7] == '_' && timestamp_str[10] == '_' &&
+            timestamp_str[13] == '_' && timestamp_str[16] == '_') {
+
+            try {
+                tm.tm_year = std::stoi(timestamp_str.substr(0, 4)) - 1900; // Year since 1900
+                tm.tm_mon = std::stoi(timestamp_str.substr(5, 2)) - 1;     // Month (0-11)
+                tm.tm_mday = std::stoi(timestamp_str.substr(8, 2));         // Day (1-31)
+                tm.tm_hour = std::stoi(timestamp_str.substr(11, 2));        // Hour (0-23)
+                tm.tm_min = std::stoi(timestamp_str.substr(14, 2));         // Minute (0-59)
+                tm.tm_sec = std::stoi(timestamp_str.substr(17, 2));         // Second (0-59)
+            } catch (const std::exception& e) {
+                std::cerr << "❌ Timestamp parse fail: " << timestamp_str << " - " << e.what() << std::endl;
+                continue;
+            }
+        } else {
+            // Try standard format as fallback
+            std::istringstream ts_stream(timestamp_str);
+            ts_stream >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+
+            if (ts_stream.fail()) {
+                std::cerr << "❌ Timestamp parse fail: " << timestamp_str << std::endl;
+                continue;
+            }
         }
 
         auto tp = std::chrono::system_clock::from_time_t(std::mktime(&tm));
 
         for (size_t i = 0; i < pig_ids.size(); ++i) {
             std::string score_str;
-            std::getline(ss, score_str, ',');
+            std::getline(ss, score_str, '\t');
 
             if (score_str.empty() || pig_ids[i] == -1) continue;
 
@@ -123,6 +143,6 @@ void parse_and_batch_insert(const std::string& filepath,
         posture_collection.insert_many(batch, mongocxx::options::insert{}.ordered(false));
     }
 
-    std::cout << " Total Amount of Pigs Fount" << pig_ids.size() << std::endl;
+    std::cout << "✅ Total Number of Pigs Found: " << pig_ids.size() << std::endl;
     std::cout << "✅ Finished processing: " << filepath << std::endl;
 }
