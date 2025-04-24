@@ -11,47 +11,45 @@
 #include <mongocxx/uri.hpp>
 #include <mongocxx/exception/exception.hpp>
 
-#include "ThreadPool.h"
-#include "FileWatcher.h" 
-#include "CSVIngest.h" 
+#include "Application.h"
 
 namespace fs = std::filesystem;
 
 int main() {
+    // Display welcome banner
+    std::cout << "\033[2J\033[1;1H"; // Clear screen
+    std::cout << "┌───────────────────────────────────────────────┐\n";
+    std::cout << "│                                               │\n";
+    std::cout << "│            PAAL CSV Parser v1.1.0             │\n";
+    std::cout << "│                                               │\n";
+    std::cout << "│      A robust CSV parser for pig posture      │\n";
+    std::cout << "│      data with MongoDB integration            │\n";
+    std::cout << "│                                               │\n";
+    std::cout << "│      Developed by Brody Nelson @ PAALABS      │\n";
+    std::cout << "│                                               │\n";
+    std::cout << "└───────────────────────────────────────────────┘\n\n";
+
+    // Create and initialize the application
+    Application app;
+
     try {
-        // Initialize MongoDB driver instance
-        mongocxx::instance instance{};
+        if (app.initialize()) {
+            std::cout << "✅ Application initialized successfully\n";
+            std::cout << "✅ Press Enter to continue...\n";
+            std::cin.get();
 
-        // Define custom connection URI
-        const std::string mongo_uri_str = "mongodb://PAAL:PAAL@localhost:27017/?directConnection=true";
-        mongocxx::uri uri(mongo_uri_str);
-
-        // Connect to MongoDB with explicit URI
-        mongocxx::client client(uri);
-
-        // Access pig_data database and collections
-        mongocxx::database pig_db = client["paalab"];
-        auto pigs_col = pig_db["pigs"];
-        auto posture_col = pig_db["pigpostures"];
-
-        // Create thread pool
-        ThreadPool pool(std::thread::hardware_concurrency());
-
-        // Create watch folder if missing
-        std::string folder_path = "cold_folder";
-        if (!fs::exists(folder_path)) {
-            fs::create_directory(folder_path);
+            // Run the application
+            app.run();
+        } else {
+            std::cerr << "❌ Failed to initialize application\n";
+            return EXIT_FAILURE;
         }
-
-        std::cout << "✅ Connected to MongoDB and watching folder: " << folder_path << std::endl;
-
-        // Start watching the directory
-        watch_directory(folder_path, pool, pigs_col, posture_col);
     }
-    catch (const mongocxx::exception& e) {
-        std::cerr << "❌ MongoDB Connection Error: " << e.what() << std::endl;
+    catch (const std::exception& e) {
+        std::cerr << "❌ Application Error: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }
 
+    std::cout << "Application shutdown complete.\n";
     return EXIT_SUCCESS;
 }

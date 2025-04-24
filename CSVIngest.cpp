@@ -1,6 +1,7 @@
 #include "CSVIngest.h"
 #include "Pig.h"
 #include "PigPosture.h"
+#include "Application.h"
 
 #include <iostream>
 #include <fstream>
@@ -35,11 +36,14 @@ void insert_pig_if_needed(int pig_id, mongocxx::collection& pigs_collection) {
 
 void parse_and_batch_insert(const std::string& filepath,
     mongocxx::collection pigs_collection,
-    mongocxx::collection posture_collection) {
+    mongocxx::collection posture_collection,
+    ProcessingStats* stats,
+    int batchSize) {
 
     std::ifstream file(filepath);
     if (!file.is_open()) {
         std::cerr << "❌ Failed to open CSV: " << filepath << std::endl;
+        if (stats) stats->errorCount++;
         return;
     }
 
@@ -65,7 +69,11 @@ void parse_and_batch_insert(const std::string& filepath,
 
     std::unordered_set<int> checked_pigs;
     std::vector<bsoncxx::document::value> batch;
-    const size_t BATCH_SIZE = 1000;
+    const size_t BATCH_SIZE = batchSize > 0 ? batchSize : 1000;
+
+    // Track statistics
+    int recordsInserted = 0;
+    int pigsRegistered = 0;
 
     std::string line;
     while (std::getline(file, line)) {
@@ -120,20 +128,25 @@ void parse_and_batch_insert(const std::string& filepath,
                         Pig new_pig(pig_id);
                         pigs_collection.insert_one(new_pig.to_bson().view());
                         std::cout << "🆕 [Pig Created] pigId: " << pig_id << std::endl;
+                        pigsRegistered++;
+                        if (stats) stats->pigsRegistered++;
                     }
                     checked_pigs.insert(pig_id);
                 }
 
                 Posture posture(pig_id, tp, score);
                 batch.push_back(posture.to_bson());
+                recordsInserted++;
 
                 if (batch.size() >= BATCH_SIZE) {
                     posture_collection.insert_many(batch, mongocxx::options::insert{}.ordered(false));
+                    if (stats) stats->recordsInserted += batch.size();
                     batch.clear();
                 }
 
             } catch (const std::exception& e) {
                 std::cerr << "❌ Parse error at pig index " << i << ": " << e.what() << std::endl;
+                if (stats) stats->errorCount++;
                 continue;
             }
         }
@@ -141,8 +154,13 @@ void parse_and_batch_insert(const std::string& filepath,
 
     if (!batch.empty()) {
         posture_collection.insert_many(batch, mongocxx::options::insert{}.ordered(false));
+        if (stats) stats->recordsInserted += batch.size();
     }
 
     std::cout << "✅ Total Number of Pigs Found: " << pig_ids.size() << std::endl;
+    std::cout << "✅ Total Records Inserted: " << recordsInserted << std::endl;
+    std::cout << "✅ New Pigs Registered: " << pigsRegistered << std::endl;
     std::cout << "✅ Finished processing: " << filepath << std::endl;
+
+    if (stats) stats->filesProcessed++;
 }

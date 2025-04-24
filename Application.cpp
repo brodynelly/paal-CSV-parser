@@ -9,6 +9,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -33,18 +34,18 @@ std::vector<std::pair<std::string, std::chrono::system_clock::time_point>> Proce
 }
 
 // Application methods
-Application::Application() : running(false), pool(nullptr) {
+Application::Application() : pool(nullptr), running(false) {
 }
 
 Application::~Application() {
     if (running) {
         stop();
     }
-    
+
     if (watcherThread.joinable()) {
         watcherThread.join();
     }
-    
+
     delete pool;
 }
 
@@ -53,22 +54,22 @@ bool Application::initialize() {
         // Create MongoDB client
         mongocxx::uri uri(config.mongoUri);
         client = mongocxx::client(uri);
-        
+
         // Access database and collections
         db = client[config.dbName];
         pigs_collection = db[config.pigsCollection];
         posture_collection = db[config.posturesCollection];
-        
+
         // Create thread pool
         int threadCount = config.threadCount > 0 ? config.threadCount : std::thread::hardware_concurrency();
         pool = new ThreadPool(threadCount);
-        
+
         // Create necessary directories
         createDirectories();
-        
+
         std::cout << "✅ Connected to MongoDB database: " << config.dbName << std::endl;
         std::cout << "✅ Thread pool initialized with " << threadCount << " threads" << std::endl;
-        
+
         running = true;
         return true;
     }
@@ -82,11 +83,11 @@ void Application::createDirectories() {
     if (!fs::exists(config.watchFolder)) {
         fs::create_directory(config.watchFolder);
     }
-    
+
     if (config.archiveProcessedFiles && !fs::exists(config.archiveFolder)) {
         fs::create_directory(config.archiveFolder);
     }
-    
+
     if (config.moveErrorFiles && !fs::exists(config.errorFolder)) {
         fs::create_directory(config.errorFolder);
     }
@@ -95,20 +96,20 @@ void Application::createDirectories() {
 void Application::run() {
     // Start the file watcher in a separate thread
     startFileWatcher();
-    
+
     // Main application loop
     while (running) {
         // Clear the screen
         std::cout << "\033[2J\033[1;1H";
-        
+
         // Display the menu
         displayMenu();
-        
+
         // Get user command
         std::string command;
         std::cout << "\nEnter command: ";
         std::getline(std::cin, command);
-        
+
         // Handle the command
         handleCommand(command);
     }
@@ -125,7 +126,7 @@ void Application::displayMenu() {
     std::cout << "│ help     - Display this help menu             │\n";
     std::cout << "│ quit     - Exit the application               │\n";
     std::cout << "└───────────────────────────────────────────────┘\n";
-    
+
     // Display current statistics
     displayStats();
 }
@@ -138,13 +139,13 @@ void Application::displayStats() {
     std::cout << "│ Records Inserted: " << std::setw(27) << stats.recordsInserted << " │\n";
     std::cout << "│ Pigs Registered: " << std::setw(28) << stats.pigsRegistered << " │\n";
     std::cout << "│ Error Count: " << std::setw(32) << stats.errorCount << " │\n";
-    
+
     // Display active files
     auto activeFiles = stats.getActiveFiles();
     if (!activeFiles.empty()) {
         std::cout << "├───────────────────────────────────────────────┤\n";
         std::cout << "│ Active Files:                                 │\n";
-        
+
         for (const auto& file : activeFiles) {
             std::string filename = fs::path(file.first).filename().string();
             if (filename.length() > 35) {
@@ -153,23 +154,23 @@ void Application::displayStats() {
             std::cout << "│ - " << std::left << std::setw(41) << filename << " │\n";
         }
     }
-    
+
     std::cout << "└───────────────────────────────────────────────┘\n";
 }
 
 void Application::handleCommand(const std::string& command) {
     std::string cmd = command;
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), [](unsigned char c){ return std::tolower(c); });
-    
+
     if (cmd == "stats") {
         // Clear screen and show detailed stats
         std::cout << "\033[2J\033[1;1H";
         std::cout << "┌───────────────────────────────────────────────┐\n";
         std::cout << "│            Detailed Statistics                │\n";
         std::cout << "└───────────────────────────────────────────────┘\n\n";
-        
+
         displayStats();
-        
+
         std::cout << "\nPress Enter to return to the main menu...";
         std::cin.get();
     }
@@ -178,11 +179,11 @@ void Application::handleCommand(const std::string& command) {
         std::cout << "┌───────────────────────────────────────────────┐\n";
         std::cout << "│            Process Specific File              │\n";
         std::cout << "└───────────────────────────────────────────────┘\n\n";
-        
+
         std::cout << "Enter the path to the CSV file: ";
         std::string filepath;
         std::getline(std::cin, filepath);
-        
+
         if (!filepath.empty()) {
             if (fs::exists(filepath)) {
                 std::cout << "Processing file: " << filepath << std::endl;
@@ -192,7 +193,7 @@ void Application::handleCommand(const std::string& command) {
                 std::cout << "❌ File does not exist: " << filepath << std::endl;
             }
         }
-        
+
         std::cout << "\nPress Enter to return to the main menu...";
         std::cin.get();
     }
@@ -218,7 +219,7 @@ void Application::handleCommand(const std::string& command) {
 
 void Application::configureSettings() {
     bool configuring = true;
-    
+
     while (configuring && running) {
         std::cout << "\033[2J\033[1;1H";
         std::cout << "┌───────────────────────────────────────────────┐\n";
@@ -237,14 +238,14 @@ void Application::configureSettings() {
         std::cout << "│ 11. Move Error Files: " << std::setw(25) << (config.moveErrorFiles ? "Yes" : "No") << " │\n";
         std::cout << "│ 0. Return to Main Menu                        │\n";
         std::cout << "└───────────────────────────────────────────────┘\n";
-        
+
         std::cout << "\nEnter option number to change (0 to return): ";
         std::string option;
         std::getline(std::cin, option);
-        
+
         try {
             int opt = std::stoi(option);
-            
+
             switch (opt) {
                 case 0:
                     configuring = false;
@@ -310,17 +311,17 @@ void Application::configureSettings() {
                     std::cin.get();
                     break;
             }
-            
+
             // If we changed a critical setting, we need to reinitialize
             if (opt >= 1 && opt <= 4) {
                 std::cout << "Critical setting changed. Application needs to restart.\n";
                 std::cout << "Press Enter to continue...";
                 std::cin.get();
-                
+
                 // Stop the current application
                 running = false;
                 configuring = false;
-                
+
                 // The main function will need to reinitialize the application
             }
         }
@@ -335,7 +336,7 @@ void Application::startFileWatcher() {
     // Create a lambda function to watch the directory
     auto watchFunction = [this]() {
         std::unordered_set<std::string> seen;
-        
+
         while (this->running) {
             try {
                 for (const auto& entry : fs::directory_iterator(this->config.watchFolder)) {
@@ -352,12 +353,12 @@ void Application::startFileWatcher() {
                 std::cerr << "❌ File Watcher Error: " << e.what() << std::endl;
                 this->stats.errorCount++;
             }
-            
+
             // Sleep for a short time before checking again
             std::this_thread::sleep_for(std::chrono::seconds(2));
         }
     };
-    
+
     // Start the watcher thread
     watcherThread = std::thread(watchFunction);
 }
@@ -365,41 +366,32 @@ void Application::startFileWatcher() {
 void Application::processFile(const std::string& filepath) {
     // Add the file to active files
     stats.addActiveFile(filepath);
-    
+
     // Create a lambda function to process the file
     auto processFunction = [this, filepath]() {
         try {
-            // Create a custom parse_and_batch_insert function that updates our stats
-            auto customParser = [this](const std::string& file, mongocxx::collection& pigs_col, mongocxx::collection& posture_col) {
-                // Call the original function
-                parse_and_batch_insert(file, pigs_col, posture_col);
-                
-                // Update statistics
-                this->stats.filesProcessed++;
-                
-                // Archive the file if needed
-                if (this->config.archiveProcessedFiles) {
-                    this->archiveFile(file);
-                }
-            };
-            
-            // Enqueue the task
-            customParser(filepath, this->pigs_collection, this->posture_collection);
+            // Process the file
+            parse_and_batch_insert(filepath, this->pigs_collection, this->posture_collection, &(this->stats), this->config.batchSize);
+
+            // Archive the file if needed
+            if (this->config.archiveProcessedFiles) {
+                this->archiveFile(filepath);
+            }
         }
         catch (const std::exception& e) {
             std::cerr << "❌ Processing Error: " << e.what() << std::endl;
             this->stats.errorCount++;
-            
+
             // Move to error folder if needed
             if (this->config.moveErrorFiles) {
                 this->moveToErrorFolder(filepath);
             }
         }
-        
+
         // Remove the file from active files
         this->stats.removeActiveFile(filepath);
     };
-    
+
     // Enqueue the task in the thread pool
     pool->enqueue(processFunction);
 }
@@ -408,7 +400,7 @@ void Application::archiveFile(const std::string& filepath) {
     try {
         fs::path source(filepath);
         fs::path destination = fs::path(config.archiveFolder) / source.filename();
-        
+
         // Create a unique filename if the file already exists
         if (fs::exists(destination)) {
             auto now = std::chrono::system_clock::now();
@@ -417,7 +409,7 @@ void Application::archiveFile(const std::string& filepath) {
             ss << std::put_time(std::localtime(&timestamp), "%Y%m%d_%H%M%S_");
             destination = fs::path(config.archiveFolder) / (ss.str() + source.filename().string());
         }
-        
+
         // Move the file
         fs::rename(source, destination);
     }
@@ -431,7 +423,7 @@ void Application::moveToErrorFolder(const std::string& filepath) {
     try {
         fs::path source(filepath);
         fs::path destination = fs::path(config.errorFolder) / source.filename();
-        
+
         // Create a unique filename if the file already exists
         if (fs::exists(destination)) {
             auto now = std::chrono::system_clock::now();
@@ -440,7 +432,7 @@ void Application::moveToErrorFolder(const std::string& filepath) {
             ss << std::put_time(std::localtime(&timestamp), "%Y%m%d_%H%M%S_");
             destination = fs::path(config.errorFolder) / (ss.str() + source.filename().string());
         }
-        
+
         // Move the file
         fs::rename(source, destination);
     }
@@ -454,13 +446,13 @@ void Application::moveToErrorFolder(const std::string& filepath) {
 void updateConsoleStats(const ProcessingStats& stats) {
     // Clear the current line
     std::cout << "\r\033[K";
-    
+
     // Print the statistics
-    std::cout << "Files: " << stats.filesProcessed 
-              << " | Records: " << stats.recordsInserted 
-              << " | Pigs: " << stats.pigsRegistered 
+    std::cout << "Files: " << stats.filesProcessed
+              << " | Records: " << stats.recordsInserted
+              << " | Pigs: " << stats.pigsRegistered
               << " | Errors: " << stats.errorCount;
-    
+
     // Flush the output
     std::cout.flush();
 }

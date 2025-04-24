@@ -26,6 +26,7 @@ include_directories(
 # Source files
 set(SOURCES
     main.cpp
+    Application.cpp
     CSVIngest.cpp
     FileWatcher.cpp
     ThreadPool.cpp
