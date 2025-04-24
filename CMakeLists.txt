@@ -12,6 +12,10 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(MONGOCXX REQUIRED libmongocxx)
 pkg_check_modules(BSONCXX REQUIRED libbsoncxx)
 
+# Add library directories explicitly
+link_directories(${MONGOCXX_LIBRARY_DIRS})
+link_directories(${BSONCXX_LIBRARY_DIRS})
+
 # Include paths
 include_directories(
     ${MONGOCXX_INCLUDE_DIRS}
@@ -34,8 +38,7 @@ add_executable(CsVParser ${SOURCES})
 
 # Link MongoDB + stdc++fs (for GCC's filesystem support)
 target_link_libraries(CsVParser
-    ${MONGOCXX_LIBRARIES}
-    ${BSONCXX_LIBRARIES}
+    ${MONGOCXX_LDFLAGS}
     pthread
 )
 
