@@ -28,6 +28,15 @@ void watch_directory(const std::string& dir_path, ThreadPool& pool,
                 std::string filepath = entry.path().string();
                 if (seen.find(filepath) == seen.end()) {
                     seen.insert(filepath);
+                    // Wait if queue is full
+                    if (pool.getMaxQueueSize() > 0) {
+                        while (pool.getQueueSize() >= pool.getMaxQueueSize()) {
+                            std::cout << "⚠️  ThreadPool queue full (" << pool.getQueueSize()
+                                      << "/" << pool.getMaxQueueSize() << "). Waiting..." << std::endl;
+                            std::this_thread::sleep_for(std::chrono::seconds(1));
+                        }
+                    }
+
                     pool.enqueue([filepath, pigs_collection, posture_collection]() {
                         // Using default values for stats and batchSize
                         parse_and_batch_insert(filepath, pigs_collection, posture_collection, nullptr, 1000);
