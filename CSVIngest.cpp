@@ -8,15 +8,32 @@
 #include <sstream>
 #include <iomanip>
 #include <unordered_set>
+#include <mutex>
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/json.hpp>
 
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::stream::finalize;
 
+// Global cache of known pigs to avoid duplicate database queries across files
+static std::unordered_set<int> pig_id_cache;
+static std::mutex pig_cache_mutex;
+
 bool pig_exists(int pig_id, mongocxx::collection& pigs_collection) {
+    {
+        std::lock_guard<std::mutex> lock(pig_cache_mutex);
+        if (pig_id_cache.find(pig_id) != pig_id_cache.end()) {
+            return true; // found in cache
+        }
+    }
+
     auto result = pigs_collection.find_one(document{} << "pigId" << pig_id << finalize);
-    return result ? true : false;
+    if (result) {
+        std::lock_guard<std::mutex> lock(pig_cache_mutex);
+        pig_id_cache.insert(pig_id); // populate cache for future queries
+        return true;
+    }
+    return false;
 }
 
 void insert_pig_if_needed(int pig_id, mongocxx::collection& pigs_collection) {
@@ -31,6 +48,10 @@ void insert_pig_if_needed(int pig_id, mongocxx::collection& pigs_collection) {
 
         pigs_collection.insert_one(new_pig.to_bson().view());
         std::cout << "[🐖 New Pig Registered] Pig ID: " << pig_id << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(pig_cache_mutex);
+            pig_id_cache.insert(pig_id); // update cache with newly inserted pig
+        }
     }
 }
 
@@ -123,13 +144,18 @@ void parse_and_batch_insert(const std::string& filepath,
                 int pig_id = pig_ids[i];
 
                 if (checked_pigs.find(pig_id) == checked_pigs.end()) {
-                    auto result = pigs_collection.find_one(document{} << "pigId" << pig_id << finalize);
-                    if (!result) {
+                    if (!pig_exists(pig_id, pigs_collection)) {
                         Pig new_pig(pig_id);
                         pigs_collection.insert_one(new_pig.to_bson().view());
+                        {
+                            std::lock_guard<std::mutex> lock(pig_cache_mutex);
+                            pig_id_cache.insert(pig_id);
+                        }
                         std::cout << "🆕 [Pig Created] pigId: " << pig_id << std::endl;
                         pigsRegistered++;
                         if (stats) stats->pigsRegistered++;
+                    } else {
+                        // Add to cache already done in pig_exists()
                     }
                     checked_pigs.insert(pig_id);
                 }
