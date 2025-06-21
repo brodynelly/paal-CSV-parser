@@ -10,6 +10,9 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
+#include <cerrno>
+#include <sys/inotify.h>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -337,26 +340,72 @@ void Application::startFileWatcher() {
     auto watchFunction = [this]() {
         std::unordered_set<std::string> seen;
 
+        // Process any existing CSV files first
+        try {
+            for (const auto& entry : fs::directory_iterator(this->config.watchFolder)) {
+                if (entry.path().extension() == ".csv") {
+                    std::string filepath = entry.path().string();
+                    seen.insert(filepath);
+                    this->processFile(filepath);
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Initial Scan Error: " << e.what() << std::endl;
+            this->stats.errorCount++;
+        }
+
+        // Setup inotify for event driven notifications
+        int fd = inotify_init1(IN_NONBLOCK);
+        if (fd < 0) {
+            std::cerr << "❌ inotify_init1 failed" << std::endl;
+            this->stats.errorCount++;
+            return;
+        }
+
+        int wd = inotify_add_watch(fd, this->config.watchFolder.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO);
+        if (wd < 0) {
+            std::cerr << "❌ inotify_add_watch failed" << std::endl;
+            close(fd);
+            this->stats.errorCount++;
+            return;
+        }
+
+        const size_t eventSize = sizeof(struct inotify_event);
+        const size_t bufLen = 1024 * (eventSize + 16);
+        std::vector<char> buffer(bufLen);
+
         while (this->running) {
-            try {
-                for (const auto& entry : fs::directory_iterator(this->config.watchFolder)) {
-                    if (entry.path().extension() == ".csv") {
-                        std::string filepath = entry.path().string();
+            int length = read(fd, buffer.data(), bufLen);
+            if (length < 0) {
+                if (errno == EAGAIN) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    continue;
+                }
+                std::cerr << "❌ inotify read error" << std::endl;
+                this->stats.errorCount++;
+                break;
+            }
+
+            int i = 0;
+            while (i < length) {
+                struct inotify_event* event = reinterpret_cast<struct inotify_event*>(&buffer[i]);
+                if (event->len > 0 && !(event->mask & IN_ISDIR)) {
+                    std::string filename(event->name);
+                    if (fs::path(filename).extension() == ".csv") {
+                        std::string filepath = (fs::path(this->config.watchFolder) / filename).string();
+                        // Avoid processing the same file twice
                         if (seen.find(filepath) == seen.end()) {
                             seen.insert(filepath);
                             this->processFile(filepath);
                         }
                     }
                 }
+                i += eventSize + event->len;
             }
-            catch (const std::exception& e) {
-                std::cerr << "❌ File Watcher Error: " << e.what() << std::endl;
-                this->stats.errorCount++;
-            }
-
-            // Sleep for a short time before checking again
-            std::this_thread::sleep_for(std::chrono::seconds(2));
         }
+
+        inotify_rm_watch(fd, wd);
+        close(fd);
     };
 
     // Start the watcher thread
