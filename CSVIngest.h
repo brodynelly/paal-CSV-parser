@@ -14,8 +14,8 @@ using ProgressCallback = std::function<void(int, int)>;
 
 void parse_and_batch_insert(
     const std::string& filepath,
-    mongocxx::collection pigs_collection,
-    mongocxx::collection posture_collection,
+    const mongocxx::collection& pigs_collection,
+    const mongocxx::collection& posture_collection,
     ProcessingStats* stats = nullptr,
     int batchSize = 1000);
 

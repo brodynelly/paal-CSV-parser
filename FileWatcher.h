@@ -7,6 +7,6 @@
 // Function declaration
 void watch_directory(const std::string& directory_path,
                      ThreadPool& pool,
-                     mongocxx::collection pigs_collection,
-                     mongocxx::collection posture_collection);
+                     const mongocxx::collection& pigs_collection,
+                     const mongocxx::collection& posture_collection);
 

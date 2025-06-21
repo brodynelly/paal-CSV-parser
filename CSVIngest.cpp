@@ -14,12 +14,12 @@
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::stream::finalize;
 
-bool pig_exists(int pig_id, mongocxx::collection& pigs_collection) {
+bool pig_exists(int pig_id, const mongocxx::collection& pigs_collection) {
     auto result = pigs_collection.find_one(document{} << "pigId" << pig_id << finalize);
     return result ? true : false;
 }
 
-void insert_pig_if_needed(int pig_id, mongocxx::collection& pigs_collection) {
+void insert_pig_if_needed(int pig_id, const mongocxx::collection& pigs_collection) {
     if (!pig_exists(pig_id, pigs_collection)) {
         Pig new_pig(
             pig_id,
@@ -35,8 +35,8 @@ void insert_pig_if_needed(int pig_id, mongocxx::collection& pigs_collection) {
 }
 
 void parse_and_batch_insert(const std::string& filepath,
-    mongocxx::collection pigs_collection,
-    mongocxx::collection posture_collection,
+    const mongocxx::collection& pigs_collection,
+    const mongocxx::collection& posture_collection,
     ProcessingStats* stats,
     int batchSize) {
 
