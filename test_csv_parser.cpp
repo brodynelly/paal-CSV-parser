@@ -7,6 +7,7 @@
 #include <ctime>
 #include <iomanip>
 #include <unordered_set>
+#include "TimeUtils.h"
 
 int main() {
     std::string filepath = "build/cold_folder/unknown1.csv";
@@ -62,7 +63,8 @@ int main() {
                 tm.tm_min = std::stoi(timestamp_str.substr(14, 2));         // Minute (0-59)
                 tm.tm_sec = std::stoi(timestamp_str.substr(17, 2));         // Second (0-59)
                 
-                auto tp = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+                tm.tm_isdst = 0;
+                auto tp = std::chrono::system_clock::from_time_t(timegm_utc(&tm));
                 successful_timestamps++;
                 
                 // Print the first few successful timestamps
@@ -101,7 +103,8 @@ int main() {
                 std::cerr << "❌ Timestamp parse fail: " << timestamp_str << std::endl;
                 failed_timestamps++;
             } else {
-                auto tp = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+                tm.tm_isdst = 0;
+                auto tp = std::chrono::system_clock::from_time_t(timegm_utc(&tm));
                 successful_timestamps++;
                 
                 // Print the first few successful timestamps

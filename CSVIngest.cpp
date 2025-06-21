@@ -2,6 +2,7 @@
 #include "Pig.h"
 #include "PigPosture.h"
 #include "Application.h"
+#include "TimeUtils.h"
 
 #include <iostream>
 #include <fstream>
@@ -110,7 +111,8 @@ void parse_and_batch_insert(const std::string& filepath,
             }
         }
 
-        auto tp = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+        tm.tm_isdst = 0; // timestamps are provided in UTC
+        auto tp = std::chrono::system_clock::from_time_t(timegm_utc(&tm));
 
         for (size_t i = 0; i < pig_ids.size(); ++i) {
             std::string score_str;
