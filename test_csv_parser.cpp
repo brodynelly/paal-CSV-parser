@@ -6,6 +6,7 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <cmath>
 #include <unordered_set>
 
 int main() {
@@ -78,7 +79,9 @@ int main() {
                     if (score_str.empty() || pig_ids[i] == -1) continue;
                     
                     try {
-                        int score = std::stoi(score_str);
+                        // Accept floating point values and round to nearest int
+                        float score_f = std::stof(score_str);
+                        int score = static_cast<int>(std::round(score_f));
                         
                         // Just for demonstration, print a few scores
                         if (successful_timestamps <= 3 && i < 3) {
