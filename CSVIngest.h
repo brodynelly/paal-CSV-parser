@@ -12,6 +12,8 @@ struct ProcessingStats;
 // Callback function type for progress updates
 using ProgressCallback = std::function<void(int, int)>;
 
+constexpr std::size_t TIMESTAMP_LENGTH = 19;
+
 void parse_and_batch_insert(
     const std::string& filepath,
     mongocxx::collection pigs_collection,
