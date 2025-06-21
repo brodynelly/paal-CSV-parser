@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/json.hpp>
+#include <stdexcept>
 
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::stream::finalize;
@@ -71,6 +72,20 @@ void parse_and_batch_insert(const std::string& filepath,
     std::vector<bsoncxx::document::value> batch;
     const size_t BATCH_SIZE = batchSize > 0 ? batchSize : 1000;
 
+    // Helper lambda to flush a batch safely by inserting documents one by one
+    auto flush_batch = [&]() {
+        for (auto& doc : batch) {
+            try {
+                posture_collection.insert_one(doc.view());
+                if (stats) stats->recordsInserted++;
+            } catch (const std::exception& e) {
+                std::cerr << "❌ Failed to insert record during flush: " << e.what() << std::endl;
+                if (stats) stats->errorCount++;
+            }
+        }
+        batch.clear();
+    };
+
     // Track statistics
     int recordsInserted = 0;
     int pigsRegistered = 0;
@@ -126,10 +141,15 @@ void parse_and_batch_insert(const std::string& filepath,
                     auto result = pigs_collection.find_one(document{} << "pigId" << pig_id << finalize);
                     if (!result) {
                         Pig new_pig(pig_id);
-                        pigs_collection.insert_one(new_pig.to_bson().view());
-                        std::cout << "🆕 [Pig Created] pigId: " << pig_id << std::endl;
-                        pigsRegistered++;
-                        if (stats) stats->pigsRegistered++;
+                        try {
+                            pigs_collection.insert_one(new_pig.to_bson().view());
+                            std::cout << "🆕 [Pig Created] pigId: " << pig_id << std::endl;
+                            pigsRegistered++;
+                            if (stats) stats->pigsRegistered++;
+                        } catch (const std::exception& e) {
+                            flush_batch();
+                            throw std::runtime_error(std::string("Failed to insert pig ") + std::to_string(pig_id) + ": " + e.what());
+                        }
                     }
                     checked_pigs.insert(pig_id);
                 }
@@ -139,9 +159,15 @@ void parse_and_batch_insert(const std::string& filepath,
                 recordsInserted++;
 
                 if (batch.size() >= BATCH_SIZE) {
-                    posture_collection.insert_many(batch, mongocxx::options::insert{}.ordered(false));
-                    if (stats) stats->recordsInserted += batch.size();
-                    batch.clear();
+                    try {
+                        posture_collection.insert_many(batch, mongocxx::options::insert{}.ordered(false));
+                        if (stats) stats->recordsInserted += batch.size();
+                        batch.clear();
+                    } catch (const std::exception& e) {
+                        std::cerr << "❌ Batch insert failed: " << e.what() << ". Attempting to flush." << std::endl;
+                        flush_batch();
+                        throw std::runtime_error(std::string("Batch insert failed: ") + e.what());
+                    }
                 }
 
             } catch (const std::exception& e) {
@@ -153,8 +179,15 @@ void parse_and_batch_insert(const std::string& filepath,
     }
 
     if (!batch.empty()) {
-        posture_collection.insert_many(batch, mongocxx::options::insert{}.ordered(false));
-        if (stats) stats->recordsInserted += batch.size();
+        try {
+            posture_collection.insert_many(batch, mongocxx::options::insert{}.ordered(false));
+            if (stats) stats->recordsInserted += batch.size();
+            batch.clear();
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Final batch insert failed: " << e.what() << ". Attempting to flush." << std::endl;
+            flush_batch();
+            throw std::runtime_error(std::string("Final batch insert failed: ") + e.what());
+        }
     }
 
     std::cout << "✅ Total Number of Pigs Found: " << pig_ids.size() << std::endl;
