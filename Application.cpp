@@ -63,6 +63,7 @@ bool Application::initialize() {
         // Create thread pool
         int threadCount = config.threadCount > 0 ? config.threadCount : std::thread::hardware_concurrency();
         pool = new ThreadPool(threadCount);
+        pool->setMaxQueueSize(static_cast<size_t>(config.maxQueueSize));
 
         // Create necessary directories
         createDirectories();
@@ -236,6 +237,7 @@ void Application::configureSettings() {
         std::cout << "│ 9. Thread Count: " << std::setw(29) << (config.threadCount == 0 ? "Auto" : std::to_string(config.threadCount)) << " │\n";
         std::cout << "│ 10. Archive Processed Files: " << std::setw(18) << (config.archiveProcessedFiles ? "Yes" : "No") << " │\n";
         std::cout << "│ 11. Move Error Files: " << std::setw(25) << (config.moveErrorFiles ? "Yes" : "No") << " │\n";
+        std::cout << "│ 12. Max Queue Size: " << std::setw(26) << config.maxQueueSize << " │\n";
         std::cout << "│ 0. Return to Main Menu                        │\n";
         std::cout << "└───────────────────────────────────────────────┘\n";
 
@@ -304,6 +306,14 @@ void Application::configureSettings() {
                     std::string answer;
                     std::getline(std::cin, answer);
                     config.moveErrorFiles = (std::tolower(answer[0]) == 'y');
+                    break;
+                }
+                case 12: {
+                    std::cout << "Enter maximum queue size (0 for unlimited): ";
+                    std::string sizeStr;
+                    std::getline(std::cin, sizeStr);
+                    config.maxQueueSize = std::stoi(sizeStr);
+                    pool->setMaxQueueSize(static_cast<size_t>(config.maxQueueSize));
                     break;
                 }
                 default:
@@ -391,6 +401,15 @@ void Application::processFile(const std::string& filepath) {
         // Remove the file from active files
         this->stats.removeActiveFile(filepath);
     };
+
+    // Wait if the queue is above the configured limit
+    if (config.maxQueueSize > 0) {
+        while (pool->getQueueSize() >= static_cast<size_t>(config.maxQueueSize)) {
+            std::cout << "⚠️  ThreadPool queue full (" << pool->getQueueSize()
+                      << "/" << config.maxQueueSize << "). Waiting..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
 
     // Enqueue the task in the thread pool
     pool->enqueue(processFunction);

@@ -9,6 +9,7 @@ A robust CSV parser designed to process and store pig posture data in MongoDB. T
 - Automatic pig registration in the database
 - Batch processing for efficient database operations
 - Error handling and reporting
+- Configurable thread pool queue limit to avoid overwhelming the system
 
 ## Prerequisites
 

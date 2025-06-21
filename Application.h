@@ -36,6 +36,7 @@ struct AppConfig {
     std::string errorFolder = "error_files";
     int batchSize = 1000;
     int threadCount = 0; // 0 means use hardware concurrency
+    int maxQueueSize = 20; // Maximum tasks waiting in the pool (0 for unlimited)
     bool archiveProcessedFiles = false;
     bool moveErrorFiles = true;
 };
