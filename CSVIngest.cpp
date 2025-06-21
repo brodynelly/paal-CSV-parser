@@ -70,6 +70,7 @@ void parse_and_batch_insert(const std::string& filepath,
     std::unordered_set<int> checked_pigs;
     std::vector<bsoncxx::document::value> batch;
     const size_t BATCH_SIZE = batchSize > 0 ? batchSize : 1000;
+    batch.reserve(BATCH_SIZE);
 
     // Track statistics
     int recordsInserted = 0;
