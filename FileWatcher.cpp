@@ -14,8 +14,8 @@
 // This function is kept for backward compatibility
 // The Application class now handles file watching with more features
 void watch_directory(const std::string& dir_path, ThreadPool& pool,
-                     mongocxx::collection pigs_collection,
-                     mongocxx::collection posture_collection) {
+                     const mongocxx::collection& pigs_collection,
+                     const mongocxx::collection& posture_collection) {
     namespace fs = std::filesystem;
     std::unordered_set<std::string> seen;
 
@@ -28,7 +28,7 @@ void watch_directory(const std::string& dir_path, ThreadPool& pool,
                 std::string filepath = entry.path().string();
                 if (seen.find(filepath) == seen.end()) {
                     seen.insert(filepath);
-                    pool.enqueue([filepath, pigs_collection, posture_collection]() {
+                    pool.enqueue([filepath, &pigs_collection, &posture_collection]() {
                         // Using default values for stats and batchSize
                         parse_and_batch_insert(filepath, pigs_collection, posture_collection, nullptr, 1000);
                     });
