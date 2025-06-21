@@ -9,29 +9,36 @@
 #include <iomanip>
 #include <unordered_set>
 #include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/builder/basic/document.hpp>
 #include <bsoncxx/json.hpp>
 
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::stream::finalize;
+using bsoncxx::builder::basic::kvp;
+using bsoncxx::builder::basic::make_document;
 
-bool pig_exists(int pig_id, mongocxx::collection& pigs_collection) {
-    auto result = pigs_collection.find_one(document{} << "pigId" << pig_id << finalize);
-    return result ? true : false;
-}
+bool upsert_pig(int pig_id, mongocxx::collection& pigs_collection) {
+    Pig new_pig(
+        pig_id,
+        "UNKNOWN_TAG",
+        "UNKNOWN_BREED",
+        0,
+        CurrentLocation("UNKNOWN_FARM", "UNKNOWN_BARN", "UNKNOWN_STALL")
+    );
 
-void insert_pig_if_needed(int pig_id, mongocxx::collection& pigs_collection) {
-    if (!pig_exists(pig_id, pigs_collection)) {
-        Pig new_pig(
-            pig_id,
-            "UNKNOWN_TAG",
-            "UNKNOWN_BREED",
-            0,
-            CurrentLocation("UNKNOWN_FARM", "UNKNOWN_BARN", "UNKNOWN_STALL")
-        );
+    mongocxx::options::update opts;
+    opts.upsert(true);
 
-        pigs_collection.insert_one(new_pig.to_bson().view());
+    auto result = pigs_collection.update_one(
+        make_document(kvp("pigId", pig_id)),
+        make_document(kvp("$setOnInsert", new_pig.to_bson().view())),
+        opts);
+
+    if (result && result->upserted_id()) {
         std::cout << "[🐖 New Pig Registered] Pig ID: " << pig_id << std::endl;
+        return true;
     }
+    return false;
 }
 
 void parse_and_batch_insert(const std::string& filepath,
@@ -122,16 +129,11 @@ void parse_and_batch_insert(const std::string& filepath,
                 int score = std::stoi(score_str);
                 int pig_id = pig_ids[i];
 
-                if (checked_pigs.find(pig_id) == checked_pigs.end()) {
-                    auto result = pigs_collection.find_one(document{} << "pigId" << pig_id << finalize);
-                    if (!result) {
-                        Pig new_pig(pig_id);
-                        pigs_collection.insert_one(new_pig.to_bson().view());
-                        std::cout << "🆕 [Pig Created] pigId: " << pig_id << std::endl;
+                if (checked_pigs.insert(pig_id).second) {
+                    if (upsert_pig(pig_id, pigs_collection)) {
                         pigsRegistered++;
                         if (stats) stats->pigsRegistered++;
                     }
-                    checked_pigs.insert(pig_id);
                 }
 
                 Posture posture(pig_id, tp, score);
