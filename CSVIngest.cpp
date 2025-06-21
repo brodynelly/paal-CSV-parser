@@ -64,6 +64,9 @@ void parse_and_batch_insert(const std::string& filepath,
                 std::cerr << "⚠️ Failed to parse pig ID from header: " << cell << std::endl;
                 pig_ids.push_back(-1); // placeholder for tracking bad header
             }
+        } else {
+            std::cerr << "⚠️ Unexpected header column: " << cell << " - skipping" << std::endl;
+            pig_ids.push_back(-1); // maintain alignment for data rows
         }
     }
 
