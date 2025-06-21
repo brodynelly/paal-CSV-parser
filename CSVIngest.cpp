@@ -14,6 +14,90 @@
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::stream::finalize;
 
+namespace {
+
+bool parseTimestamp(const std::string& timestamp_str,
+                    std::chrono::system_clock::time_point& out) {
+    std::tm tm = {};
+
+    if (timestamp_str.length() == 19 &&
+        timestamp_str[4] == '_' && timestamp_str[7] == '_' &&
+        timestamp_str[10] == '_' && timestamp_str[13] == '_' &&
+        timestamp_str[16] == '_') {
+        try {
+            tm.tm_year = std::stoi(timestamp_str.substr(0, 4)) - 1900;
+            tm.tm_mon  = std::stoi(timestamp_str.substr(5, 2)) - 1;
+            tm.tm_mday = std::stoi(timestamp_str.substr(8, 2));
+            tm.tm_hour = std::stoi(timestamp_str.substr(11, 2));
+            tm.tm_min  = std::stoi(timestamp_str.substr(14, 2));
+            tm.tm_sec  = std::stoi(timestamp_str.substr(17, 2));
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Timestamp parse fail: " << timestamp_str
+                      << " - " << e.what() << std::endl;
+            return false;
+        }
+    } else {
+        std::istringstream ts_stream(timestamp_str);
+        ts_stream >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+        if (ts_stream.fail()) {
+            std::cerr << "❌ Timestamp parse fail: " << timestamp_str << std::endl;
+            return false;
+        }
+    }
+
+    out = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+    return true;
+}
+
+bool parseRecordLine(const std::string& line,
+                     const std::vector<int>& pig_ids,
+                     std::chrono::system_clock::time_point& timestamp,
+                     std::vector<std::pair<int, int>>& pigScores,
+                     ProcessingStats* stats) {
+    std::stringstream ss(line);
+    std::string timestamp_str;
+    std::getline(ss, timestamp_str, '\t');
+
+    if (!parseTimestamp(timestamp_str, timestamp)) {
+        if (stats) stats->errorCount++;
+        return false;
+    }
+
+    for (size_t i = 0; i < pig_ids.size(); ++i) {
+        std::string score_str;
+        std::getline(ss, score_str, '\t');
+
+        if (score_str.empty() || pig_ids[i] == -1) {
+            continue;
+        }
+
+        try {
+            int score = std::stoi(score_str);
+            pigScores.emplace_back(pig_ids[i], score);
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Parse error at pig index " << i
+                      << ": " << e.what() << std::endl;
+            if (stats) stats->errorCount++;
+        }
+    }
+
+    return true;
+}
+
+void insertBatch(std::vector<bsoncxx::document::value>& batch,
+                 mongocxx::collection& posture_collection,
+                 ProcessingStats* stats) {
+    if (batch.empty()) return;
+
+    posture_collection.insert_many(batch,
+        mongocxx::options::insert{}.ordered(false));
+
+    if (stats) stats->recordsInserted += batch.size();
+    batch.clear();
+}
+
+} // namespace
+
 bool pig_exists(int pig_id, mongocxx::collection& pigs_collection) {
     auto result = pigs_collection.find_one(document{} << "pigId" << pig_id << finalize);
     return result ? true : false;
@@ -77,85 +161,37 @@ void parse_and_batch_insert(const std::string& filepath,
 
     std::string line;
     while (std::getline(file, line)) {
-        std::stringstream ss(line);
-        std::string timestamp_str;
-        std::getline(ss, timestamp_str, '\t');
+        std::chrono::system_clock::time_point timestamp;
+        std::vector<std::pair<int, int>> pigScores;
 
-        std::tm tm = {};
-
-        // Parse timestamp in format YYYY_MM_DD_HH_MM_SS (e.g., 2022_08_22_02_20_00)
-        if (timestamp_str.length() == 19 &&
-            timestamp_str[4] == '_' && timestamp_str[7] == '_' && timestamp_str[10] == '_' &&
-            timestamp_str[13] == '_' && timestamp_str[16] == '_') {
-
-            try {
-                tm.tm_year = std::stoi(timestamp_str.substr(0, 4)) - 1900; // Year since 1900
-                tm.tm_mon = std::stoi(timestamp_str.substr(5, 2)) - 1;     // Month (0-11)
-                tm.tm_mday = std::stoi(timestamp_str.substr(8, 2));         // Day (1-31)
-                tm.tm_hour = std::stoi(timestamp_str.substr(11, 2));        // Hour (0-23)
-                tm.tm_min = std::stoi(timestamp_str.substr(14, 2));         // Minute (0-59)
-                tm.tm_sec = std::stoi(timestamp_str.substr(17, 2));         // Second (0-59)
-            } catch (const std::exception& e) {
-                std::cerr << "❌ Timestamp parse fail: " << timestamp_str << " - " << e.what() << std::endl;
-                continue;
-            }
-        } else {
-            // Try standard format as fallback
-            std::istringstream ts_stream(timestamp_str);
-            ts_stream >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-
-            if (ts_stream.fail()) {
-                std::cerr << "❌ Timestamp parse fail: " << timestamp_str << std::endl;
-                continue;
-            }
+        if (!parseRecordLine(line, pig_ids, timestamp, pigScores, stats)) {
+            continue;
         }
 
-        auto tp = std::chrono::system_clock::from_time_t(std::mktime(&tm));
-
-        for (size_t i = 0; i < pig_ids.size(); ++i) {
-            std::string score_str;
-            std::getline(ss, score_str, '\t');
-
-            if (score_str.empty() || pig_ids[i] == -1) continue;
-
-            try {
-                int score = std::stoi(score_str);
-                int pig_id = pig_ids[i];
-
-                if (checked_pigs.find(pig_id) == checked_pigs.end()) {
-                    auto result = pigs_collection.find_one(document{} << "pigId" << pig_id << finalize);
-                    if (!result) {
-                        Pig new_pig(pig_id);
-                        pigs_collection.insert_one(new_pig.to_bson().view());
-                        std::cout << "🆕 [Pig Created] pigId: " << pig_id << std::endl;
-                        pigsRegistered++;
-                        if (stats) stats->pigsRegistered++;
-                    }
-                    checked_pigs.insert(pig_id);
+        for (const auto& [pig_id, score] : pigScores) {
+            if (checked_pigs.find(pig_id) == checked_pigs.end()) {
+                auto result = pigs_collection.find_one(document{} << "pigId" << pig_id << finalize);
+                if (!result) {
+                    Pig new_pig(pig_id);
+                    pigs_collection.insert_one(new_pig.to_bson().view());
+                    std::cout << "🆕 [Pig Created] pigId: " << pig_id << std::endl;
+                    pigsRegistered++;
+                    if (stats) stats->pigsRegistered++;
                 }
+                checked_pigs.insert(pig_id);
+            }
 
-                Posture posture(pig_id, tp, score);
-                batch.push_back(posture.to_bson());
-                recordsInserted++;
+            Posture posture(pig_id, timestamp, score);
+            batch.push_back(posture.to_bson());
+            recordsInserted++;
 
-                if (batch.size() >= BATCH_SIZE) {
-                    posture_collection.insert_many(batch, mongocxx::options::insert{}.ordered(false));
-                    if (stats) stats->recordsInserted += batch.size();
-                    batch.clear();
-                }
-
-            } catch (const std::exception& e) {
-                std::cerr << "❌ Parse error at pig index " << i << ": " << e.what() << std::endl;
-                if (stats) stats->errorCount++;
-                continue;
+            if (batch.size() >= BATCH_SIZE) {
+                insertBatch(batch, posture_collection, stats);
             }
         }
     }
 
-    if (!batch.empty()) {
-        posture_collection.insert_many(batch, mongocxx::options::insert{}.ordered(false));
-        if (stats) stats->recordsInserted += batch.size();
-    }
+    insertBatch(batch, posture_collection, stats);
 
     std::cout << "✅ Total Number of Pigs Found: " << pig_ids.size() << std::endl;
     std::cout << "✅ Total Records Inserted: " << recordsInserted << std::endl;
