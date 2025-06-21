@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <cmath>
 #include <unordered_set>
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/json.hpp>
@@ -119,7 +120,9 @@ void parse_and_batch_insert(const std::string& filepath,
             if (score_str.empty() || pig_ids[i] == -1) continue;
 
             try {
-                int score = std::stoi(score_str);
+                // Allow scores like "4" or "4.5" by parsing as float first
+                float score_f = std::stof(score_str);
+                int score = static_cast<int>(std::round(score_f));
                 int pig_id = pig_ids[i];
 
                 if (checked_pigs.find(pig_id) == checked_pigs.end()) {
