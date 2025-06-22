@@ -31,7 +31,11 @@ void parse_and_batch_insert(const std::string& filepath,
     }
 
     std::string header;
-    std::getline(file, header);
+    if (!std::getline(file, header) || header.empty()) {
+        std::cerr << "⚠️ CSV file has no header or is empty: " << filepath << std::endl;
+        if (stats) stats->errorCount++;
+        return;
+    }
 
     std::stringstream header_ss(header);
     std::vector<int> pig_ids;
@@ -76,7 +80,9 @@ void parse_and_batch_insert(const std::string& filepath,
     int pigsRegistered = 0;
 
     std::string line;
+    bool dataRowsFound = false;
     while (std::getline(file, line)) {
+        dataRowsFound = true;
         std::stringstream ss(line);
         std::string timestamp_str;
         std::getline(ss, timestamp_str, '\t');
@@ -173,6 +179,11 @@ void parse_and_batch_insert(const std::string& filepath,
             flush_batch();
             throw std::runtime_error(std::string("Final batch insert failed: ") + e.what());
         }
+    }
+
+    if (!dataRowsFound) {
+        std::cerr << "⚠️ CSV file contains no data rows: " << filepath << std::endl;
+        if (stats) stats->errorCount++;
     }
 
     std::cout << "✅ Total Number of Pigs Found: " << pig_ids.size() << std::endl;
