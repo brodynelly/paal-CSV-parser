@@ -60,6 +60,7 @@ void parse_and_batch_insert(const std::string& filepath,
     std::unordered_set<int> checked_pigs;
     std::vector<bsoncxx::document::value> batch;
     const size_t BATCH_SIZE = batchSize > 0 ? batchSize : 1000;
+    batch.reserve(BATCH_SIZE);
 
     // Helper lambda to flush a batch safely by inserting documents one by one
     auto flush_batch = [&]() {
