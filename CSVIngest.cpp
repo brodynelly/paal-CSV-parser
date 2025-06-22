@@ -81,6 +81,21 @@ void parse_and_batch_insert(const std::string& filepath,
         std::string timestamp_str;
         std::getline(ss, timestamp_str, '\t');
 
+        // Collect all score fields first to validate field count
+        std::vector<std::string> score_fields;
+        std::string field;
+        while (std::getline(ss, field, '\t')) {
+            score_fields.push_back(field);
+        }
+
+        if (score_fields.size() != pig_ids.size()) {
+            std::cerr << "⚠️ Malformed line: expected " << pig_ids.size()
+                      << " fields but found " << score_fields.size()
+                      << ". Skipping line." << std::endl;
+            if (stats) stats->errorCount++;
+            continue;
+        }
+
         std::tm tm = {};
 
         // Parse timestamp using explicit format definitions
@@ -99,8 +114,7 @@ void parse_and_batch_insert(const std::string& filepath,
         auto tp = std::chrono::system_clock::from_time_t(std::mktime(&tm));
 
         for (size_t i = 0; i < pig_ids.size(); ++i) {
-            std::string score_str;
-            std::getline(ss, score_str, '\t');
+            const std::string& score_str = score_fields[i];
 
             if (score_str.empty() || pig_ids[i] == -1) continue;
 
