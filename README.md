@@ -42,6 +42,7 @@ A robust CSV parser designed to process and store pig posture data in MongoDB. T
    - Have a header row with column names
    - First column should be timestamps in format `YYYY_MM_DD_HH_MM_SS`
    - Other columns should be named `ID_X` where X is the pig ID number
+   - Columns not following this pattern will be skipped with a warning
    - Values should be numeric scores
 
 2. Run the application using the provided script:
