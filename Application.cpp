@@ -9,7 +9,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
-#include <unordered_set>
+#include <unordered_map>
 
 namespace fs = std::filesystem;
 
@@ -335,15 +335,27 @@ void Application::configureSettings() {
 void Application::startFileWatcher() {
     // Create a lambda function to watch the directory
     auto watchFunction = [this]() {
-        std::unordered_set<std::string> seen;
+        // Track processed files and their last modification times
+        std::unordered_map<std::string, std::filesystem::file_time_type> seen;
 
         while (this->running) {
             try {
+                // Remove records for files that no longer exist
+                for (auto it = seen.begin(); it != seen.end(); ) {
+                    if (!fs::exists(it->first)) {
+                        it = seen.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+
                 for (const auto& entry : fs::directory_iterator(this->config.watchFolder)) {
                     if (entry.path().extension() == ".csv") {
                         std::string filepath = entry.path().string();
-                        if (seen.find(filepath) == seen.end()) {
-                            seen.insert(filepath);
+                        auto modTime = fs::last_write_time(entry);
+                        auto it = seen.find(filepath);
+                        if (it == seen.end() || it->second != modTime) {
+                            seen[filepath] = modTime;
                             this->processFile(filepath);
                         }
                     }
