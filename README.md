@@ -113,3 +113,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Project Status
+
+Active — deployed as a background service in the PAAL research environment at the University of Missouri.
