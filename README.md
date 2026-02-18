@@ -1,6 +1,15 @@
 # PAAL CSV Parser
 
-A robust CSV parser designed to process and store pig posture data in MongoDB. This tool is specifically designed to handle CSV files with tab-separated values containing timestamp and posture scores for multiple pigs.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![CI](https://github.com/brodynelly/mizzou-digital-agricultural-labs-csv-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/brodynelly/mizzou-digital-agricultural-labs-csv-parser/actions/workflows/ci.yml) ![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus&logoColor=white)
+
+Server that watches a drop folder for CSV files from the PAAL AI model, spins up a thread pool to parse them, and writes pig posture data to MongoDB.
+
+## Tech Stack
+
+- **C++17** — thread pool, file watcher, CSV parsing
+- **CMake 3.10+** — build system
+- **MongoDB C++ Driver** (`libmongocxx`) — database writes
+- **POSIX** — directory monitoring via filesystem events
 
 ## Features
 
