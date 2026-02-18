@@ -1,0 +1,3 @@
+# Tooling config (C++ project - linting via clang-tidy / cppcheck)
+[tool.ruff]
+# Not applicable
